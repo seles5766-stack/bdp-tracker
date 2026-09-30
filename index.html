@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BDP Preorder Live Velocity Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { margin-bottom: 6px; font-size: 24px; color: #38bdf8; }
+    p { color: #94a3b8; font-size: 14px; margin-top: 0; }
+    .controls { display: flex; justify-content: space-between; align-items: center; margin: 20px 0; background: #1e293b; padding: 12px 20px; border-radius: 8px; border: 1px solid #334155; }
+    select { background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 8px 12px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }
+    canvas { width: 100% !important; height: 500px !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BrickLink Designer Program — Preorder Velocity Tracker</h1>
+    <p>Synced live from Google Sheets</p>
+
+    <div class="controls">
+      <label for="metricSelect"><strong>Metric:</strong></label>
+      <select id="metricSelect">
+        <option value="count">Total Preordered Count</option>
+        <option value="remaining">% Allotment Remaining</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <canvas id="bdpChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQrAs0XGRKvd_erVYT-eeSoYDuWJMf8nhoLt9wmpBjfITwQnjnaoF7DrTN17vSKU8IjQDcXm_Fj4Ul8/pub?gid=0&single=true&output=csv';
+
+    const setColors = {
+      "Wild West Blacksmith": "#38bdf8",
+      "Fisherman's Village": "#f43f5e",
+      "Sleepy Dragon Inn": "#eab308",
+      "Pumpkin Patch": "#10b981",
+      "Woodbrick Freight Depot": "#a855f7"
+    };
+
+    let chartInstance = null;
+    let rawRows = [];
+
+    async function fetchData() {
+      Papa.parse(CSV_URL, {
+        download: true,
+        header: true,
+        complete: function(results) {
+          rawRows = results.data.filter(r => r.Timestamp && r['Set Name / ID']);
+          renderChart('count');
+        }
+      });
+    }
+
+    function renderChart(metric) {
+      const setNames = [...new Set(rawRows.map(r => r['Set Name / ID']))];
+      const timestamps = [...new Set(rawRows.map(r => r.Timestamp))].sort();
+
+      const datasets = setNames.map(setName => {
+        const setLogs = rawRows.filter(r => r['Set Name / ID'] === setName);
+        
+        const dataPoints = timestamps.map(ts => {
+          const entry = setLogs.find(r => r.Timestamp === ts);
+          if (!entry) return null;
+
+          if (metric === 'count') {
+            return parseFloat(entry['Preordered Count'] || 0);
+          } else {
+            const allotment = parseFloat(entry['Total Allotment'] || 30000);
+            const remaining = parseFloat(entry['Allotment Remaining'] || allotment);
+            return ((remaining / allotment) * 100);
+          }
+        });
+
+        return {
+          label: setName,
+          data: dataPoints,
+          borderColor: setColors[setName] || '#38bdf8',
+          backgroundColor: setColors[setName] || '#38bdf8',
+          tension: 0.25,
+          borderWidth: 2,
+          spanGaps: true
+        };
+      });
+
+      const ctx = document.getElementById('bdpChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: timestamps, datasets: datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#f8fafc', font: { size: 13 } } },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  return metric === 'count'
+                    ? `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} sets`
+                    : `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}% remaining`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+            y: {
+              grid: { color: '#334155' },
+              ticks: { color: '#94a3b8' },
+              suggestedMax: metric === 'count' ? 30000 : 100,
+              min: 0
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById('metricSelect').addEventListener('change', (e) => {
+      renderChart(e.target.value);
+    });
+
+    fetchData();
+  </script>
+</body>
+</html>
