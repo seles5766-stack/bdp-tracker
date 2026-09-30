@@ -50,7 +50,6 @@
     let chartInstance = null;
     let rawRows = [];
 
-    // Helper function to safely clean formatted numbers like "30,000" into raw numbers
     function cleanNum(val) {
       if (!val) return 0;
       const cleanStr = String(val).replace(/,/g, '').trim();
@@ -64,22 +63,45 @@
         header: true,
         skipEmptyLines: true,
         complete: function(results) {
-          // Filter out empty rows or summary table rows on the right
-          rawRows = results.data.filter(r => r.Timestamp && r['Set Name / ID'] && r['Set Name / ID'].trim() !== '');
+          // Filter valid rows with a Timestamp and Set Name
+          rawRows = results.data.filter(r => {
+            const ts = r['Timestamp'];
+            const setName = r['Set Name / ID'];
+            return ts && setName && String(ts).trim() !== '' && String(setName).trim() !== '' && !String(setName).includes('0.1');
+          });
+
           renderChart('count');
+        },
+        error: function(err) {
+          console.error("CSV Fetch Error:", err);
         }
       });
     }
 
     function renderChart(metric) {
+      if (rawRows.length === 0) return;
+
       const setNames = [...new Set(rawRows.map(r => r['Set Name / ID'].trim()))];
-      const timestamps = [...new Set(rawRows.map(r => r.Timestamp.trim()))];
+
+      // Extract and sort timestamps chronologically
+      const timestampMap = new Map();
+      rawRows.forEach(r => {
+        const rawTs = r['Timestamp'].trim();
+        const parsedDate = new Date(rawTs);
+        if (!isNaN(parsedDate.getTime())) {
+          timestampMap.set(rawTs, parsedDate.getTime());
+        } else {
+          timestampMap.set(rawTs, 0);
+        }
+      });
+
+      const timestamps = [...timestampMap.keys()].sort((a, b) => timestampMap.get(a) - timestampMap.get(b));
 
       const datasets = setNames.map(setName => {
         const setLogs = rawRows.filter(r => r['Set Name / ID'].trim() === setName);
         
         const dataPoints = timestamps.map(ts => {
-          const entry = setLogs.find(r => r.Timestamp.trim() === ts);
+          const entry = setLogs.find(r => r['Timestamp'].trim() === ts);
           if (!entry) return null;
 
           if (metric === 'count') {
@@ -116,6 +138,7 @@
             tooltip: {
               callbacks: {
                 label: function(ctx) {
+                  if (ctx.raw === null) return '';
                   return metric === 'count'
                     ? `${ctx.dataset.label}: ${ctx.raw.toLocaleString()} sets`
                     : `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}% remaining`;
