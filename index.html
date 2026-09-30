@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BDP Preorder Live Velocity Tracker</title>
+  <title>BDP Series 9 Preorder Velocity Tracker</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <style>
@@ -36,7 +36,8 @@
   </div>
 
   <script>
-    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQrAs0XGRKvd_erVYT-eeSoYDuWJMf8nhoLt9wmpBjfITwQnjnaoF7DrTN17vSKU8IjQDcXm_Fj4Ul8/pub?gid=0&single=true&output=csv';
+    // Paste your Published Google Sheet CSV URL here
+    const CSV_URL = https://docs.google.com/spreadsheets/d/e/2PACX-1vQrAs0XGRKvd_erVYT-eeSoYDuWJMf8nhoLt9wmpBjfITwQnjnaoF7DrTN17vSKU8IjQDcXm_Fj4Ul8/pub?gid=0&single=true&output=csv;
 
     const setColors = {
       "Wild West Blacksmith": "#38bdf8",
@@ -49,33 +50,43 @@
     let chartInstance = null;
     let rawRows = [];
 
+    // Helper function to safely clean formatted numbers like "30,000" into raw numbers
+    function cleanNum(val) {
+      if (!val) return 0;
+      const cleanStr = String(val).replace(/,/g, '').trim();
+      const parsed = parseFloat(cleanStr);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+
     async function fetchData() {
       Papa.parse(CSV_URL, {
         download: true,
         header: true,
+        skipEmptyLines: true,
         complete: function(results) {
-          rawRows = results.data.filter(r => r.Timestamp && r['Set Name / ID']);
+          // Filter out empty rows or summary table rows on the right
+          rawRows = results.data.filter(r => r.Timestamp && r['Set Name / ID'] && r['Set Name / ID'].trim() !== '');
           renderChart('count');
         }
       });
     }
 
     function renderChart(metric) {
-      const setNames = [...new Set(rawRows.map(r => r['Set Name / ID']))];
-      const timestamps = [...new Set(rawRows.map(r => r.Timestamp))].sort();
+      const setNames = [...new Set(rawRows.map(r => r['Set Name / ID'].trim()))];
+      const timestamps = [...new Set(rawRows.map(r => r.Timestamp.trim()))];
 
       const datasets = setNames.map(setName => {
-        const setLogs = rawRows.filter(r => r['Set Name / ID'] === setName);
+        const setLogs = rawRows.filter(r => r['Set Name / ID'].trim() === setName);
         
         const dataPoints = timestamps.map(ts => {
-          const entry = setLogs.find(r => r.Timestamp === ts);
+          const entry = setLogs.find(r => r.Timestamp.trim() === ts);
           if (!entry) return null;
 
           if (metric === 'count') {
-            return parseFloat(entry['Preordered Count'] || 0);
+            return cleanNum(entry['Preordered Count']);
           } else {
-            const allotment = parseFloat(entry['Total Allotment'] || 30000);
-            const remaining = parseFloat(entry['Allotment Remaining'] || allotment);
+            const allotment = cleanNum(entry['Total Allotment']) || 30000;
+            const remaining = cleanNum(entry['Allotment Remaining']);
             return ((remaining / allotment) * 100);
           }
         });
